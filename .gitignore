@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+backend/.venv/
+backend/uv.lock
+
+# Build output
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.env
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite / TypeScript
+*.timestamp-*.mjs
+vite.config.ts.timestamp-*
+
+# Lock files (keep package-lock.json, ignore yarn.lock if using npm)
+yarn.lock
+
+# Temp
+tmp/
