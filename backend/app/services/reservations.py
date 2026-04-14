@@ -12,15 +12,12 @@ async def calculate_monthly_revenue(
 ) -> Decimal:
     """
     Calculates revenue for a specific month.
-    """
 
-''''
- Date range boundaries are built in the property's local timezone and then
+    Date range boundaries are built in the property's local timezone and then
     converted to UTC before querying, so a booking at 2024-02-29 23:30 UTC
     (= 2024-03-01 00:30 Europe/Paris) is correctly counted in March for a
     Paris property rather than February.
-''''
-    
+    """
     tz = ZoneInfo(property_timezone)
 
     # Build month boundaries in property-local time, then convert to UTC.
@@ -51,36 +48,63 @@ async def calculate_monthly_revenue(
     
     return Decimal('0') # Placeholder for now until DB connection is finalized
 
-async def calculate_total_revenue(property_id: str, tenant_id: str) -> Dict[str, Any]:
+async def calculate_total_revenue(property_id: str, tenant_id: str, month: int, year: int) -> Dict[str, Any]:
     """
-    Aggregates revenue from database.
+    Aggregates revenue from database for a specific month.
+
+    Fetches the property's timezone first, then builds timezone-aware UTC
+    boundaries so that a booking stored as 2024-02-29 23:30 UTC is correctly
+    counted in March for a Paris property (local time 2024-03-01 00:30).
     """
     try:
         # Import database pool
         from app.core.database_pool import DatabasePool
-        
+
         # Initialize pool if needed
         db_pool = DatabasePool()
         await db_pool.initialize()
-        
+
         if db_pool.session_factory:
             async with db_pool.get_session() as session:
-                # Use SQLAlchemy text for raw SQL
                 from sqlalchemy import text
-                
+
+                # 1. Fetch the property's timezone.
+                tz_result = await session.execute(
+                    text("SELECT timezone FROM properties WHERE id = :pid AND tenant_id = :tid"),
+                    {"pid": property_id, "tid": tenant_id}
+                )
+                tz_row = tz_result.fetchone()
+                property_timezone = tz_row[0] if tz_row else "UTC"
+
+                # 2. Build month boundaries in property-local time, convert to UTC.
+                tz = ZoneInfo(property_timezone)
+                start_utc = datetime(year, month, 1, tzinfo=tz).astimezone(timezone.utc)
+                if month < 12:
+                    end_utc = datetime(year, month + 1, 1, tzinfo=tz).astimezone(timezone.utc)
+                else:
+                    end_utc = datetime(year + 1, 1, 1, tzinfo=tz).astimezone(timezone.utc)
+
+                print(f"DEBUG: {property_id} tz={property_timezone} window {start_utc} → {end_utc}")
+
+                # 3. Query reservations within the UTC window.
                 query = text("""
-                    SELECT 
+                    SELECT
                         property_id,
                         SUM(total_amount) as total_revenue,
                         COUNT(*) as reservation_count
-                    FROM reservations 
-                    WHERE property_id = :property_id AND tenant_id = :tenant_id
+                    FROM reservations
+                    WHERE property_id = :property_id
+                      AND tenant_id = :tenant_id
+                      AND check_in_date >= :start
+                      AND check_in_date < :end
                     GROUP BY property_id
                 """)
-                
+
                 result = await session.execute(query, {
-                    "property_id": property_id, 
-                    "tenant_id": tenant_id
+                    "property_id": property_id,
+                    "tenant_id": tenant_id,
+                    "start": start_utc,
+                    "end": end_utc,
                 })
                 row = result.fetchone()
                 
