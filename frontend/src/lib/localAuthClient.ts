@@ -157,13 +157,23 @@ class LocalAuthClient {
 
         if (response.ok) {
           return { data: { session: this.session } };
-        } else {
-          // Session invalid, clear it
-          this.saveSession(null);
         }
+
+        // Only clear the session when the token itself is rejected (401).
+        // A 5xx or other error means the server had a problem — the token
+        // may still be valid, so keep it and let the actual API call decide.
+        if (response.status === 401) {
+          this.saveSession(null);
+          return { data: { session: null } };
+        }
+
+        // For any other non-ok status, return the cached session as-is.
+        return { data: { session: this.session } };
       } catch (error) {
-        console.warn('[LocalAuth] Session validation failed:', error);
-        this.saveSession(null);
+        // Network error — backend may be temporarily unavailable.
+        // Keep the session so the user is not unnecessarily logged out.
+        console.warn('[LocalAuth] Session validation failed (network):', error);
+        return { data: { session: this.session } };
       }
     }
 
